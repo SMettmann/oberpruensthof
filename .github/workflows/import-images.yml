@@ -14,80 +14,75 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download original website media
+      - name: Import website media
         run: |
           python - <<'PY'
-          import json, os, re, urllib.request, urllib.parse, time
+          import json, os, re, urllib.request, urllib.parse
           from pathlib import Path
+          from concurrent.futures import ThreadPoolExecutor, as_completed
 
-          out = Path("images")
-          out.mkdir(exist_ok=True)
-          seen = set()
+          BASE="https://www.oberpruensthof.it/"
+          out=Path("images"); out.mkdir(exist_ok=True)
 
-          def get(url):
-              req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=30) as r:
+          def get(url, timeout=10):
+              req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+              with urllib.request.urlopen(req,timeout=timeout) as r:
                   return r.read()
 
-          def save_url(url):
-              if not url or url in seen:
-                  return
-              seen.add(url)
+          urls=set()
+          # WordPress media API
+          for page in range(1,8):
+              api=f"{BASE}wp-json/wp/v2/media?per_page=100&page={page}"
               try:
-                  data = get(url)
+                  items=json.loads(get(api,12))
               except Exception as e:
-                  print("skip", url, e)
-                  return
-              path = urllib.parse.urlparse(url).path
-              name = urllib.parse.unquote(os.path.basename(path)) or "image"
-              name = re.sub(r'[^A-Za-z0-9._() -]+','-',name)
-              target = out / name
-              if target.exists() and target.read_bytes() != data:
-                  stem, ext = os.path.splitext(name)
-                  target = out / f"{stem}-{abs(hash(url))%100000}{ext}"
-              target.write_bytes(data)
-              print("saved", target, len(data))
+                  print("media end",page,e); break
+              if not items: break
+              for it in items:
+                  if str(it.get("mime_type","")).startswith("image/") and it.get("source_url"):
+                      urls.add(it["source_url"])
 
-          # WordPress media library: this captures the apartment and farm originals.
-          for page in range(1, 25):
-              api = f"https://www.oberpruensthof.it/wp-json/wp/v2/media?per_page=100&page={page}"
-              try:
-                  items = json.loads(get(api))
-              except Exception as e:
-                  print("media pagination finished:", e)
-                  break
-              if not items:
-                  break
-              for item in items:
-                  mime = item.get("mime_type","")
-                  if mime.startswith("image/"):
-                      save_url(item.get("source_url"))
-              time.sleep(.2)
-
-          # Also inspect the live homepage for lazy-loaded/srcset images.
+          # Homepage lazy-loading/srcsets/backgrounds
           try:
-              html = get("https://www.oberpruensthof.it/").decode("utf-8","ignore")
-              urls = set(re.findall(r'https?://[^"\'<> ]+/wp-content/uploads/[^"\'<> ,]+', html))
-              rels = set(re.findall(r'["\'](/wp-content/uploads/[^"\']+)["\']', html))
-              for u in rels:
-                  urls.add(urllib.parse.urljoin("https://www.oberpruensthof.it/", u))
-              for u in urls:
-                  # srcset descriptors can leave HTML entities; strip common trailing junk
-                  u = u.replace("&amp;","&").rstrip(");")
-                  save_url(u)
-          except Exception as e:
-              print("homepage scan failed:", e)
+              html=get(BASE,12).decode("utf-8","ignore").replace("&amp;","&")
+              for u in re.findall(r'https?://[^"\'<>\s,]+/wp-content/uploads/[^"\'<>\s,]+',html):
+                  urls.add(u.rstrip(");"))
+              for u in re.findall(r'["\'](/wp-content/uploads/[^"\']+)["\']',html):
+                  urls.add(urllib.parse.urljoin(BASE,u))
+          except Exception as e: print("homepage",e)
 
-          print("TOTAL", len(list(out.iterdir())))
+          print("discovered",len(urls))
+
+          def download(url):
+              try:
+                  data=get(url,10)
+                  name=urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(url).path)) or "image"
+                  name=re.sub(r'[^A-Za-z0-9._() -]+','-',name)
+                  target=out/name
+                  if target.exists() and target.read_bytes()!=data:
+                      stem,ext=os.path.splitext(name); target=out/f"{stem}-{abs(hash(url))%100000}{ext}"
+                  target.write_bytes(data)
+                  return {"file":target.name,"source":url,"bytes":len(data)}
+              except Exception as e:
+                  print("skip",url,e); return None
+
+          records=[]
+          with ThreadPoolExecutor(max_workers=14) as ex:
+              futs=[ex.submit(download,u) for u in sorted(urls)]
+              for fut in as_completed(futs):
+                  r=fut.result()
+                  if r: records.append(r)
+
+          records.sort(key=lambda x:x["file"].lower())
+          (out/"manifest.json").write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding="utf-8")
+          print("downloaded",len(records))
           PY
-      - name: Commit downloaded images
+      - name: Commit images
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add images
-          if git diff --cached --quiet; then
-            echo "No new images"
-          else
-            git commit -m "Import original Oberpruensthof images"
-            git push
-          fi
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Import original Oberpruensthof image library"
+          git pull --rebase origin main
+          git push
