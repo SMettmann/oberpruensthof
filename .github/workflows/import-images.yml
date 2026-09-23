@@ -1,4 +1,4 @@
-name: Import Oberpruensthof Images
+name: Import Oberpruensthof Apartment Images
 
 on:
   workflow_dispatch:
@@ -14,105 +14,51 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Import website media
+      - name: Download curated apartment photos
         run: |
           python - <<'PY'
-          import json, os, re, urllib.request, urllib.parse
           from pathlib import Path
-          from concurrent.futures import ThreadPoolExecutor, as_completed
+          import urllib.request
 
-          BASE="https://www.oberpruensthof.it/"
-          out=Path("images"); out.mkdir(exist_ok=True)
-
-          def get(url, timeout=10):
-              req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
-              with urllib.request.urlopen(req,timeout=timeout) as r:
-                  return r.read()
-
-          urls=set()
-          # WordPress media API
-          for page in range(1,8):
-              api=f"{BASE}wp-json/wp/v2/media?per_page=100&page={page}"
-              try:
-                  items=json.loads(get(api,12))
-              except Exception as e:
-                  print("media end",page,e); break
-              if not items: break
-              for it in items:
-                  if str(it.get("mime_type","")).startswith("image/") and it.get("source_url"):
-                      urls.add(it["source_url"])
-
-          # Homepage lazy-loading/srcsets/backgrounds
-          try:
-              html=get(BASE,12).decode("utf-8","ignore").replace("&amp;","&")
-              for u in re.findall(r'https?://[^"\'<>\s,]+/wp-content/uploads/[^"\'<>\s,]+',html):
-                  urls.add(u.rstrip(");"))
-              for u in re.findall(r'["\'](/wp-content/uploads/[^"\']+)["\']',html):
-                  urls.add(urllib.parse.urljoin(BASE,u))
-          except Exception as e: print("homepage",e)
-
-          print("discovered",len(urls))
-
-          def download(url):
-              try:
-                  data=get(url,10)
-                  name=urllib.parse.unquote(os.path.basename(urllib.parse.urlparse(url).path)) or "image"
-                  name=re.sub(r'[^A-Za-z0-9._() -]+','-',name)
-                  target=out/name
-                  if target.exists() and target.read_bytes()!=data:
-                      stem,ext=os.path.splitext(name); target=out/f"{stem}-{abs(hash(url))%100000}{ext}"
-                  target.write_bytes(data)
-                  return {"file":target.name,"source":url,"bytes":len(data)}
-              except Exception as e:
-                  print("skip",url,e); return None
-
-          records=[]
-          with ThreadPoolExecutor(max_workers=14) as ex:
-              futs=[ex.submit(download,u) for u in sorted(urls)]
-              for fut in as_completed(futs):
-                  r=fut.result()
-                  if r: records.append(r)
-
-          records.sort(key=lambda x:x["file"].lower())
-          (out/"manifest.json").write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding="utf-8")
-          print("downloaded",len(records))
-
-          # Curated apartment galleries: exact photos assigned to the correct apartment.
-          curated = {
-              # Ferienwohnung St. Luis
-              "luis-01-kueche.jpg": "https://fm-production.s3.amazonaws.com/cache%2F2c%2F3c%2F2c3ca92872706fb09005633f5049706c.jpg",
-              "luis-02-essen.jpg": "https://fm-production.s3.amazonaws.com/cache%2F8c%2Fa7%2F8ca76e2079b8732d3c671e23f900ba92.jpg",
-              "luis-03-wohnraum.jpg": "https://fm-production.s3.amazonaws.com/cache%2F26%2F36%2F26364772641b0ff74c0bf9f4aeceac00.jpg",
-              "luis-04-schlafzimmer.jpg": "https://fm-production.s3.amazonaws.com/cache%2F43%2F98%2F43985e0c46788f3376febc07ad17244e.jpg",
-              "luis-05-schlafzimmer.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fde%2F5a%2Fde5ab50139a87830b6309ee4212010e8.jpg",
-              "luis-06-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fbe%2F4d%2Fbe4dc33ea01e6e250926e9c4fe90d9c8.jpg",
-              "luis-07-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2F25%2F35%2F2535c640b70e509d4b22e8b4834ecfcd.jpg",
-              "luis-08-bad.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fad%2Fc9%2Fadc95600e9feda44decaae3c98ee1a5f.jpg",
-
-              # Ferienwohnung St. Sebastian
-              "sebastian-01-wohnen.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fee%2F80%2Fee80cd4f61aaab0dfa807d8320f37c60.jpg",
-              "sebastian-02-kueche.jpg": "https://fm-production.s3.amazonaws.com/cache%2F30%2Ffc%2F30fc28adae3dd9a1d2526e522f7c1962.jpg",
-              "sebastian-03-kueche.jpg": "https://fm-production.s3.amazonaws.com/cache%2F32%2F2c%2F322ccf63c54f87a0d7a0bf80d9314c42.jpg",
-              "sebastian-04-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fa9%2Ffa%2Fa9fa71fec221c3dd5b8ca693aeeee487.jpg",
-              "sebastian-05-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2F68%2Fd1%2F68d1172839bd7f76e8c39a2a2066e535.jpg",
-              "sebastian-06-schlafzimmer.jpg": "https://fm-production.s3.amazonaws.com/cache%2F5d%2F2e%2F5d2e0f6251bf80c4c77258ed8b18dae9.jpg",
-              "sebastian-07-bad.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fd3%2Fbb%2Fd3bb364f8ed7aa8e2c55a3becffbcacb.jpg",
-              "sebastian-08-bad.jpg": "https://fm-production.s3.amazonaws.com/cache%2F81%2F64%2F81642672ac20be30ab2f46cfccbdfd56.jpg",
+          out = Path("images")
+          out.mkdir(exist_ok=True)
+          photos = {
+            "luis-01-kueche.jpg":"https://fm-production.s3.amazonaws.com/cache%2F2c%2F3c%2F2c3ca92872706fb09005633f5049706c.jpg",
+            "luis-02-essen.jpg":"https://fm-production.s3.amazonaws.com/cache%2F8c%2Fa7%2F8ca76e2079b8732d3c671e23f900ba92.jpg",
+            "luis-03-wohnraum.jpg":"https://fm-production.s3.amazonaws.com/cache%2F26%2F36%2F26364772641b0ff74c0bf9f4aeceac00.jpg",
+            "luis-04-schlafzimmer.jpg":"https://fm-production.s3.amazonaws.com/cache%2F43%2F98%2F43985e0c46788f3376febc07ad17244e.jpg",
+            "luis-05-schlafzimmer.jpg":"https://fm-production.s3.amazonaws.com/cache%2Fde%2F5a%2Fde5ab50139a87830b6309ee4212010e8.jpg",
+            "luis-06-galerie.jpg":"https://fm-production.s3.amazonaws.com/cache%2Fbe%2F4d%2Fbe4dc33ea01e6e250926e9c4fe90d9c8.jpg",
+            "luis-07-galerie.jpg":"https://fm-production.s3.amazonaws.com/cache%2F25%2F35%2F2535c640b70e509d4b22e8b4834ecfcd.jpg",
+            "luis-08-bad.jpg":"https://fm-production.s3.amazonaws.com/cache%2Fad%2Fc9%2Fadc95600e9feda44decaae3c98ee1a5f.jpg",
+            "sebastian-01-wohnen.jpg":"https://fm-production.s3.amazonaws.com/cache%2Fee%2F80%2Fee80cd4f61aaab0dfa807d8320f37c60.jpg",
+            "sebastian-02-kueche.jpg":"https://fm-production.s3.amazonaws.com/cache%2F30%2Ffc%2F30fc28adae3dd9a1d2526e522f7c1962.jpg",
+            "sebastian-03-kueche.jpg":"https://fm-production.s3.amazonaws.com/cache%2F32%2F2c%2F322ccf63c54f87a0d7a0bf80d9314c42.jpg",
+            "sebastian-04-galerie.jpg":"https://fm-production.s3.amazonaws.com/cache%2Fa9%2Ffa%2Fa9fa71fec221c3dd5b8ca693aeeee487.jpg",
+            "sebastian-05-galerie.jpg":"https://fm-production.s3.amazonaws.com/cache%2F68%2Fd1%2F68d1172839bd7f76e8c39a2a2066e535.jpg",
+            "sebastian-06-schlafzimmer.jpg":"https://fm-production.s3.amazonaws.com/cache%2F5d%2F2e%2F5d2e0f6251bf80c4c77258ed8b18dae9.jpg",
+            "sebastian-07-bad.jpg":"https://fm-production.s3.amazonaws.com/cache%2Fd3%2Fbb%2Fd3bb364f8ed7aa8e2c55a3becffbcacb.jpg",
+            "sebastian-08-bad.jpg":"https://fm-production.s3.amazonaws.com/cache%2F81%2F64%2F81642672ac20be30ab2f46cfccbdfd56.jpg",
           }
-          for name, url in curated.items():
-              try:
-                  data=get(url,15)
-                  (out/name).write_bytes(data)
-                  print("curated",name,len(data))
-              except Exception as e:
-                  print("curated failed",name,e)
+          for name, url in photos.items():
+              req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0"})
+              with urllib.request.urlopen(req,timeout=20) as r:
+                  data=r.read()
+              (out/name).write_bytes(data)
+              print(name, len(data))
           PY
-      - name: Commit images
+      - name: Commit apartment photos
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add images
+          git add images/luis-*.jpg images/sebastian-*.jpg
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "Import original Oberpruensthof image library"
+          git commit -m "Add curated apartment photos"
           git pull --rebase origin main
-          git push
+          for i in 1 2 3 4; do
+            git push && exit 0
+            echo "push attempt $i failed; retrying..."
+            sleep 4
+            git pull --rebase origin main || true
+          done
+          exit 1
