@@ -76,6 +76,36 @@ jobs:
           records.sort(key=lambda x:x["file"].lower())
           (out/"manifest.json").write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding="utf-8")
           print("downloaded",len(records))
+
+          # Curated apartment galleries: exact photos assigned to the correct apartment.
+          curated = {
+              # Ferienwohnung St. Luis
+              "luis-01-kueche.jpg": "https://fm-production.s3.amazonaws.com/cache%2F2c%2F3c%2F2c3ca92872706fb09005633f5049706c.jpg",
+              "luis-02-essen.jpg": "https://fm-production.s3.amazonaws.com/cache%2F8c%2Fa7%2F8ca76e2079b8732d3c671e23f900ba92.jpg",
+              "luis-03-wohnraum.jpg": "https://fm-production.s3.amazonaws.com/cache%2F26%2F36%2F26364772641b0ff74c0bf9f4aeceac00.jpg",
+              "luis-04-schlafzimmer.jpg": "https://fm-production.s3.amazonaws.com/cache%2F43%2F98%2F43985e0c46788f3376febc07ad17244e.jpg",
+              "luis-05-schlafzimmer.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fde%2F5a%2Fde5ab50139a87830b6309ee4212010e8.jpg",
+              "luis-06-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fbe%2F4d%2Fbe4dc33ea01e6e250926e9c4fe90d9c8.jpg",
+              "luis-07-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2F25%2F35%2F2535c640b70e509d4b22e8b4834ecfcd.jpg",
+              "luis-08-bad.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fad%2Fc9%2Fadc95600e9feda44decaae3c98ee1a5f.jpg",
+
+              # Ferienwohnung St. Sebastian
+              "sebastian-01-wohnen.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fee%2F80%2Fee80cd4f61aaab0dfa807d8320f37c60.jpg",
+              "sebastian-02-kueche.jpg": "https://fm-production.s3.amazonaws.com/cache%2F30%2Ffc%2F30fc28adae3dd9a1d2526e522f7c1962.jpg",
+              "sebastian-03-kueche.jpg": "https://fm-production.s3.amazonaws.com/cache%2F32%2F2c%2F322ccf63c54f87a0d7a0bf80d9314c42.jpg",
+              "sebastian-04-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fa9%2Ffa%2Fa9fa71fec221c3dd5b8ca693aeeee487.jpg",
+              "sebastian-05-galerie.jpg": "https://fm-production.s3.amazonaws.com/cache%2F68%2Fd1%2F68d1172839bd7f76e8c39a2a2066e535.jpg",
+              "sebastian-06-schlafzimmer.jpg": "https://fm-production.s3.amazonaws.com/cache%2F5d%2F2e%2F5d2e0f6251bf80c4c77258ed8b18dae9.jpg",
+              "sebastian-07-bad.jpg": "https://fm-production.s3.amazonaws.com/cache%2Fd3%2Fbb%2Fd3bb364f8ed7aa8e2c55a3becffbcacb.jpg",
+              "sebastian-08-bad.jpg": "https://fm-production.s3.amazonaws.com/cache%2F81%2F64%2F81642672ac20be30ab2f46cfccbdfd56.jpg",
+          }
+          for name, url in curated.items():
+              try:
+                  data=get(url,15)
+                  (out/name).write_bytes(data)
+                  print("curated",name,len(data))
+              except Exception as e:
+                  print("curated failed",name,e)
           PY
       - name: Commit images
         run: |
